@@ -192,6 +192,9 @@ def main():
     # Saludo de arranque dinámico en segundo plano
     threading.Thread(target=controller.voice.play_startup_sound, daemon=True).start()
     
+    # Calibrar micrófono en segundo plano para el ruido ambiental
+    threading.Thread(target=controller.voice.calibrate_microphone, daemon=True).start()
+    
     # Iniciar la escucha de la palabra clave "Jarvis" y bucle de proactividad
     threading.Thread(target=controller.wake_word_loop, daemon=True).start()
     threading.Thread(target=controller.proactive_loop, daemon=True).start()

@@ -12,12 +12,21 @@ class VoiceHandler:
             self.config = json.load(f)["voice"]
             
         self.recognizer = sr.Recognizer()
-        # Fijamos la sensibilidad en 400 y APAGAMOS el ajuste dinámico
-        # Así no subirá la sensibilidad después de gritar "Jarvis"
-        self.recognizer.energy_threshold = 400
+        # Sensibilidad inicial más baja (más sensible) por defecto
+        self.recognizer.energy_threshold = 200
         self.recognizer.dynamic_energy_threshold = False
         
         pygame.mixer.init()
+        
+    def calibrate_microphone(self):
+        """Calibra la sensibilidad del micrófono basándose en el ruido ambiental de la habitación"""
+        try:
+            print("[JARVIS SISTEMA] Calibrando micrófono para el ruido ambiental...")
+            with sr.Microphone() as source:
+                self.recognizer.adjust_for_ambient_noise(source, duration=1.0)
+            print(f"[JARVIS SISTEMA] Calibración terminada. Umbral de energía configurado en: {self.recognizer.energy_threshold}")
+        except Exception as e:
+            print(f"[JARVIS ERROR] No se pudo calibrar el micrófono: {e}")
         
     def play_startup_sound(self):
         # En vez de un MP3 estático, saludamos dinámicamente al señor
