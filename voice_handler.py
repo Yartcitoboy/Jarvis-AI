@@ -20,27 +20,22 @@ class VoiceHandler:
         pygame.mixer.init()
         
     def play_startup_sound(self):
-        sound_file = self.config.get("startup_sound", "Jarvis.mp3")
-        if os.path.exists(sound_file):
-            print(f"Reproduciendo sonido de inicio: {sound_file}")
-            pygame.mixer.music.load(sound_file)
-            pygame.mixer.music.play()
-            while pygame.mixer.music.get_busy():
-                pygame.time.Clock().tick(10)
-        else:
-            print(f"No se encontró el archivo de sonido: {sound_file}")
-
+        # En vez de un MP3 estático, saludamos dinámicamente al señor
+        greeting = "Sistemas en línea, señor. Todos los módulos operativos. ¿Qué desea ordenar?"
+        self.speak(greeting)
+ 
     def listen_for_wake_word(self, wake_word="jarvis"):
         with sr.Microphone() as source:
-            # Eliminamos el adjust_for_ambient_noise aquí para no confundir tu voz con "ruido"
             try:
-                audio = self.recognizer.listen(source, timeout=1, phrase_time_limit=3)
+                audio = self.recognizer.listen(source, timeout=1.5, phrase_time_limit=4)
                 text = self.recognizer.recognize_google(audio, language="es-ES").lower()
                 if wake_word in text:
-                    return True
+                    parts = text.split(wake_word, 1)
+                    payload = parts[1].strip() if len(parts) > 1 else ""
+                    return True, payload
             except:
                 pass
-        return False
+        return False, ""
 
     def listen(self):
         with sr.Microphone() as source:

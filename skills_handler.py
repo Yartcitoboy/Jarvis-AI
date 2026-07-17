@@ -107,6 +107,45 @@ def execute_command(command_str):
                     print("[JARVIS SISTEMA] URL de n8n no configurada.")
             except Exception as e:
                 print(f"[JARVIS ERROR] Fallo al leer config para n8n: {e}")
+
+        elif cmd_type == "update_memory":
+            key = params.get("key")
+            val = params.get("val")
+            if key and val:
+                import json
+                try:
+                    with open("config.json", "r", encoding="utf-8") as f:
+                        config = json.load(f)["api"]
+                    vault_path = config.get("obsidian_vault_path", "Obsidian_Vault")
+                    os.makedirs(vault_path, exist_ok=True)
+                    memory_file = os.path.join(vault_path, "memoria.md")
+                    
+                    lines = []
+                    updated = False
+                    if os.path.exists(memory_file):
+                        with open(memory_file, "r", encoding="utf-8") as f:
+                            lines = f.readlines()
+                    
+                    new_line = f"* **{key}**: {val}\n"
+                    
+                    for i, line in enumerate(lines):
+                        if line.strip().startswith(f"* **{key}**:") or line.strip().startswith(f"- **{key}**:"):
+                            lines[i] = new_line
+                            updated = True
+                            break
+                    
+                    if not updated:
+                        if not lines:
+                            lines.append("# Memoria de Jarvis\n\n")
+                        lines.append(new_line)
+                        
+                    with open(memory_file, "w", encoding="utf-8") as f:
+                        f.writelines(lines)
+                        
+                    print(f"[JARVIS SISTEMA] Memoria actualizada en Obsidian: {key} -> {val}")
+                    return "Memoria actualizada."
+                except Exception as e:
+                    print(f"[JARVIS ERROR] Error actualizando memoria: {e}")
                 
         elif cmd_type == "quit":
             print("[JARVIS SISTEMA] Apagando el sistema por orden del usuario.")

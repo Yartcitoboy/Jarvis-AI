@@ -19,7 +19,7 @@ class AssistantController(QObject):
         self.last_active_time = time.time()
         self.is_sleeping = False
 
-    def start_interaction(self):
+    def start_interaction(self, inline_payload=None):
         """Inicia el ciclo: Escuchar -> Pensar -> Hablar"""
         if self.is_busy:
             return
@@ -30,7 +30,7 @@ class AssistantController(QObject):
         self.is_sleeping = False
         
         # Se ejecuta en un hilo separado para que la interfaz gráfica siga rotando fluidamente
-        threading.Thread(target=self._interaction_loop, daemon=True).start()
+        threading.Thread(target=self._interaction_loop, args=(inline_payload,), daemon=True).start()
         
     def wake_word_loop(self):
         """Hilo en segundo plano que escucha todo el tiempo buscando la palabra 'Jarvis'"""
@@ -44,23 +44,75 @@ class AssistantController(QObject):
                     self.state_changed.emit("SLEEP")
                     print("Jarvis ha entrado en modo reposo (Bajo consumo).")
                 
-                activated = self.voice.listen_for_wake_word("jarvis")
+                activated, payload = self.voice.listen_for_wake_word("jarvis")
                 if activated:
                     print("¡Palabra clave detectada!")
-                    self.start_interaction()
+                    if payload:
+                        print(f"Comando integrado detectado: '{payload}'")
+                    self.start_interaction(inline_payload=payload if payload else None)
             else:
                 time.sleep(0.5)
-        
-    def _interaction_loop(self):
+                
+    def proactive_loop(self):
+        """Hilo de fondo para comentarios espontáneos"""
+        import time
+        # Esperar 45 segundos tras arrancar antes de poder hablar de forma proactiva
+        time.sleep(45)
+        while True:
+            if not self.is_busy and not self.is_sleeping:
+                time_since_last_action = time.time() - self.last_active_time
+                # Comentario espontáneo si no hay actividad en 3 minutos (180 seg)
+                if time_since_last_action > 180:
+                    self.trigger_proactive_speech()
+            time.sleep(10)
+            
+    def trigger_proactive_speech(self):
+        if self.is_busy:
+            return
+        self.is_busy = True
         try:
-            # 1. Escuchar
-            self.state_changed.emit("LISTENING")
-            user_text = self.voice.listen()
+            self.state_changed.emit("THINKING")
+            prompt = (
+                "[Nota del sistema: Genera un comentario proactivo espontáneo para el usuario. "
+                "Comenta sobre el estado de la PC o pregúntale si necesita ayuda con n8n o su perfil de Obsidian. "
+                "Sé extremadamente breve (máximo 1 oración) y salúdalo como Señor.]"
+            )
+            response_text = self.brain.ask(prompt)
+            
+            speak_text = response_text
+            if response_text.strip().startswith("[COMMAND:"):
+                end_idx = response_text.find("]")
+                if end_idx != -1:
+                    command_part = response_text[:end_idx + 1]
+                    speak_text = response_text[end_idx + 1:].strip()
+                    from skills_handler import execute_command
+                    threading.Thread(target=execute_command, args=(command_part,), daemon=True).start()
+            
+            self.state_changed.emit("SPEAKING")
+            self.voice.speak(speak_text)
+            import time
+            self.last_active_time = time.time()
+        except Exception as e:
+            print(f"Error en habla proactiva: {e}")
+        finally:
+            self.state_changed.emit("IDLE")
+            self.is_busy = False
+        
+    def _interaction_loop(self, inline_payload=None):
+        try:
+            if inline_payload:
+                user_text = inline_payload
+                print(f"Tú (De voz directa): {user_text}")
+            else:
+                # 1. Escuchar
+                self.state_changed.emit("LISTENING")
+                user_text = self.voice.listen()
             
             if not user_text:
                 return
                 
-            print(f"Tú: {user_text}")
+            if not inline_payload:
+                print(f"Tú: {user_text}")
                 
             # 2. Pensar
             self.state_changed.emit("THINKING")
@@ -101,11 +153,12 @@ def main():
     widget.request_listen.connect(controller.start_interaction)
     controller.state_changed.connect(widget.set_state)
     
-    # Reproducir sonido de arranque
+    # Saludo de arranque dinámico
     threading.Thread(target=controller.voice.play_startup_sound, daemon=True).start()
     
-    # Iniciar la escucha de la palabra clave "Jarvis" en segundo plano
+    # Iniciar la escucha de la palabra clave "Jarvis" y bucle de proactividad
     threading.Thread(target=controller.wake_word_loop, daemon=True).start()
+    threading.Thread(target=controller.proactive_loop, daemon=True).start()
     
     widget.show()
     
