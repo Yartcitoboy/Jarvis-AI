@@ -82,6 +82,32 @@ def execute_command(command_str):
                 print(f"[JARVIS SISTEMA] Nota guardada en {note_file}: '{text}'")
                 return f"Nota guardada."
                 
+        elif cmd_type == "trigger_n8n":
+            workflow = params.get("workflow", "")
+            payload = params.get("payload", "")
+            
+            import json, requests
+            try:
+                with open("config.json", "r", encoding="utf-8") as f:
+                    config = json.load(f)["api"]
+                
+                webhook_url = config.get("n8n_webhook_url", "")
+                if webhook_url:
+                    data = {"workflow": workflow, "payload": payload}
+                    print(f"[JARVIS SISTEMA] Enviando Webhook a n8n: {webhook_url} con datos: {data}")
+                    
+                    # Se envía en un bloque try para que no bloquee si no hay internet
+                    try:
+                        requests.post(webhook_url, json=data, timeout=5)
+                    except Exception as req_e:
+                        print(f"Error al enviar a n8n: {req_e}")
+                        
+                    return "Evento n8n disparado."
+                else:
+                    print("[JARVIS SISTEMA] URL de n8n no configurada.")
+            except Exception as e:
+                print(f"[JARVIS ERROR] Fallo al leer config para n8n: {e}")
+                
         elif cmd_type == "quit":
             print("[JARVIS SISTEMA] Apagando el sistema por orden del usuario.")
             # Forzamos el cierre de la aplicación

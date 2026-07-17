@@ -4,6 +4,8 @@
         "openrouter_key": "PON_TU_API_KEY_AQUI",
         "openrouter_model": "google/gemma-4-31b-it:free",
         "ollama_url": "http://localhost:11434/api/generate",
-        "ollama_model": "llama3"
+        "ollama_model": "llama3",
+        "obsidian_vault_path": "Obsidian_Vault",
+        "n8n_webhook_url": "https://tu-url-de-n8n.com/webhook/jarvis"
     }
 }

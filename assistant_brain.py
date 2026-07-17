@@ -19,11 +19,12 @@ class AssistantBrain:
                     "- Para cerrar la pestaña actual del navegador: [COMMAND: close_tab]\n"
                     "- Para cerrar una aplicación: [COMMAND: close_app | app: <nombre_app>]\n"
                     "- Para tomar una nota rápida de texto: [COMMAND: take_note | text: <contenido_de_la_nota>]\n"
+                    "- Para automatizar o enviar mensajes por n8n: [COMMAND: trigger_n8n | workflow: <whatsapp/gmail/etc> | payload: <mensaje o datos>]\n"
                     "- Para apagar o cerrar a Jarvis completamente: [COMMAND: quit]\n\n"
                     "Ejemplo: Si el usuario dice 'abre youtube', tu respuesta exacta debe ser:\n"
                     "[COMMAND: open_web | url: https://www.youtube.com] Abriendo YouTube, señor.\n"
-                    "Ejemplo: Si el usuario te pide que te apagues, te duermas o te vayas, tu respuesta debe ser:\n"
-                    "[COMMAND: quit] Entendido, desconectando sistemas.\n"
+                    "Ejemplo: Si el usuario dice 'envía un mensaje a mi mamá diciendo hola', tu respuesta debe ser:\n"
+                    "[COMMAND: trigger_n8n | workflow: whatsapp | payload: enviar hola a mamá] Mensaje enviado.\n"
                     "No inventes otros comandos. Si la petición es una conversación normal y no requiere abrir nada o tomar notas, responde normalmente sin ningún comando."
                 )
             }
@@ -32,16 +33,33 @@ class AssistantBrain:
     def reload_config(self):
         with open(self.config_path, "r", encoding="utf-8") as f:
             self.config = json.load(f)["api"]
+            
+    def _get_obsidian_context(self):
+        import os
+        vault_path = self.config.get("obsidian_vault_path", "Obsidian_Vault")
+        context = ""
+        try:
+            profile_path = os.path.join(vault_path, "perfil.md")
+            if os.path.exists(profile_path):
+                with open(profile_path, "r", encoding="utf-8") as f:
+                    context += f.read() + "\n"
+        except Exception as e:
+            print(f"Error leyendo Obsidian: {e}")
+            
+        if context:
+            return f"\n[Nota del sistema: Contexto desde tu memoria (Obsidian):\n{context}]"
+        return ""
         
     def ask(self, user_text):
         self.reload_config()
         
-        # Inyectar la hora y fecha actual dinámicamente para que la IA siempre sepa la hora local
         import datetime
         now = datetime.datetime.now()
         timestamp_info = f"\n[Nota del sistema: La fecha y hora actual local es {now.strftime('%d/%m/%Y %H:%M:%S')}]"
         
-        self.history.append({"role": "user", "content": user_text + timestamp_info})
+        obsidian_info = self._get_obsidian_context()
+        
+        self.history.append({"role": "user", "content": user_text + timestamp_info + obsidian_info})
         
         if self.config["engine"] == "openrouter":
             return self._ask_openrouter(user_text)
