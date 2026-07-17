@@ -107,14 +107,28 @@ class AssistantBrain:
             r = requests.get("https://openrouter.ai/api/v1/models", timeout=5)
             r.raise_for_status()
             models_data = r.json().get("data", [])
-            free_vision = [
-                m["id"] for m in models_data 
-                if ":free" in m["id"] 
-                and m.get("architecture") 
-                and "image" in m["architecture"].get("input_modalities", [])
-            ]
+            free_vision = []
+            for m in models_data:
+                m_id = m["id"].lower()
+                if (":free" in m_id 
+                    and m.get("architecture") 
+                    and "image" in m["architecture"].get("input_modalities", [])
+                    and "safety" not in m_id
+                    and "moderation" not in m_id):
+                    free_vision.append(m["id"])
+                    
             if free_vision:
-                # Priorizar nemotron-nano-12b-v2-vl o gemma-4 si están disponibles
+                # Priorizar modelos VL (Vision-Language), Qwen, Gemma-4 o Llama
+                def sort_key(model_id):
+                    model_id_lower = model_id.lower()
+                    score = 0
+                    if "vl" in model_id_lower: score += 10
+                    if "qwen" in model_id_lower: score += 8
+                    if "gemma" in model_id_lower: score += 6
+                    if "llama" in model_id_lower: score += 4
+                    return score
+                
+                free_vision.sort(key=sort_key, reverse=True)
                 return free_vision
         except Exception as e:
             print(f"Error consultando modelos de visión dinámicos: {e}")
