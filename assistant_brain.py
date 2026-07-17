@@ -102,6 +102,24 @@ class AssistantBrain:
             print("[MULTI-AGENTE] Enrutando al Agente de Respuesta Rápida...")
             return self._run_default_agent(user_text, is_builder=False)
 
+    def _get_free_vision_models(self):
+        try:
+            r = requests.get("https://openrouter.ai/api/v1/models", timeout=5)
+            r.raise_for_status()
+            models_data = r.json().get("data", [])
+            free_vision = [
+                m["id"] for m in models_data 
+                if ":free" in m["id"] 
+                and m.get("architecture") 
+                and "image" in m["architecture"].get("input_modalities", [])
+            ]
+            if free_vision:
+                # Priorizar nemotron-nano-12b-v2-vl o gemma-4 si están disponibles
+                return free_vision
+        except Exception as e:
+            print(f"Error consultando modelos de visión dinámicos: {e}")
+        return ["nvidia/nemotron-nano-12b-v2-vl:free", "google/gemma-4-31b-it:free"]
+
     def _run_vision_agent(self, user_text):
         img_b64 = self._capture_screen_base64()
         if not img_b64:
@@ -109,7 +127,6 @@ class AssistantBrain:
             
         print("[JARVIS SISTEMA] Pantalla capturada. Analizando imagen...")
         
-        model = "google/gemini-2.5-flash:free"
         headers = {
             "Authorization": f"Bearer {self.config['openrouter_key']}",
             "Content-Type": "application/json"
@@ -135,24 +152,27 @@ class AssistantBrain:
             }
         ]
         
-        data = {
-            "model": model,
-            "messages": messages
-        }
+        free_vision_models = self._get_free_vision_models()
         
-        try:
-            response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=20)
-            response.raise_for_status()
-            result = response.json()
-            if "choices" in result and len(result["choices"]) > 0:
-                reply = result["choices"][0]["message"]["content"]
-                self.history.append({"role": "user", "content": user_text + " [Analizando pantalla]"})
-                self.history.append({"role": "assistant", "content": reply})
-                return reply
-        except Exception as e:
-            print(f"Error con modelo de visión: {e}")
-            
-        return "Lo siento señor, he tenido un problema analizando su pantalla a través de la red."
+        for model in free_vision_models:
+            print(f"Intentando analizar pantalla con el modelo visual: {model}...")
+            data = {
+                "model": model,
+                "messages": messages
+            }
+            try:
+                response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data, timeout=20)
+                response.raise_for_status()
+                result = response.json()
+                if "choices" in result and len(result["choices"]) > 0:
+                    reply = result["choices"][0]["message"]["content"]
+                    self.history.append({"role": "user", "content": user_text + " [Analizando pantalla]"})
+                    self.history.append({"role": "assistant", "content": reply})
+                    return reply
+            except Exception as e:
+                print(f"Error con modelo visual {model}: {e}")
+                
+        return "Lo siento señor, he tenido un problema analizando su pantalla a través de todos los modelos de la red."
 
     def _run_deep_thinking_agent(self, user_text):
         # Usamos DeepSeek-R1 (modelo de razonamiento de largo pensamiento) si está libre, o Llama-3-70b
