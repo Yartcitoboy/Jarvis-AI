@@ -15,6 +15,7 @@ class VoiceHandler:
         # Sensibilidad inicial más baja (más sensible) por defecto
         self.recognizer.energy_threshold = 200
         self.recognizer.dynamic_energy_threshold = False
+        self.recognizer.pause_threshold = 0.5 # Detectar el fin del habla mucho más rápido (por defecto es 0.8)
         
         pygame.mixer.init()
         
@@ -46,12 +47,11 @@ class VoiceHandler:
                 pass
         return False, ""
 
-    def listen(self):
+    def listen(self, timeout=8, phrase_time_limit=15):
         with sr.Microphone() as source:
             print("Escuchando (Habla ahora)...")
             try:
-                # Aumentamos el timeout para darte más tiempo para empezar a hablar
-                audio = self.recognizer.listen(source, timeout=8, phrase_time_limit=15)
+                audio = self.recognizer.listen(source, timeout=timeout, phrase_time_limit=phrase_time_limit)
                 print("Procesando voz...")
                 text = self.recognizer.recognize_google(audio, language="es-ES")
                 return text

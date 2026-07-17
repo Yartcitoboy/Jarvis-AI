@@ -11,6 +11,9 @@ from overlay_ui import JarvisHUDOverlay
 
 class AssistantController(QObject):
     state_changed = pyqtSignal(str)
+    hud_trigger_scan = pyqtSignal(str)
+    hud_show_subtitle = pyqtSignal(str)
+    hud_clear_subtitle = pyqtSignal()
     
     def __init__(self):
         super().__init__()
@@ -107,56 +110,59 @@ class AssistantController(QObject):
         
     def _interaction_loop(self, inline_payload=None):
         try:
-            if inline_payload:
-                user_text = inline_payload
-                print(f"Tú (De voz directa): {user_text}")
-            else:
-                # 1. Escuchar
+            user_text = inline_payload
+            if not user_text:
+                # 1. Escuchar la primera frase
                 self.state_changed.emit("LISTENING")
                 user_text = self.voice.listen()
             
-            if not user_text:
-                return
+            # Entrar en bucle de conversación continua
+            while user_text:
+                import time
+                self.last_active_time = time.time()
+                self.is_sleeping = False
                 
-            if not inline_payload:
                 print(f"Tú: {user_text}")
                 
-            # Disparar HUD visual si se detecta escaneo de pantalla
-            user_lower = user_text.lower()
-            is_vision = any(w in user_lower for w in ["pantalla", "mira esto", "mira mi pantalla", "qué tengo abierto", "analiza mi pantalla"])
-            if is_vision and self.hud:
-                self.hud.trigger_analysis_hud("SYS_SCAN: ANALIZANDO PANTALLA")
-                
-            # 2. Pensar
-            self.state_changed.emit("THINKING")
-            response_text = self.brain.ask(user_text)
-            
-            # Separar el comando del texto hablado
-            speak_text = response_text
-            
-            if response_text.strip().startswith("[COMMAND:"):
-                # Buscar dónde termina el comando
-                end_idx = response_text.find("]")
-                if end_idx != -1:
-                    command_part = response_text[:end_idx + 1]
-                    # El texto que se va a leer en voz alta es todo lo que viene después de los corchetes
-                    speak_text = response_text[end_idx + 1:].strip()
+                # Disparar HUD visual de escaneo si corresponde (de forma segura con señales)
+                user_lower = user_text.lower()
+                is_vision = any(w in user_lower for w in ["pantalla", "mira esto", "mira mi pantalla", "qué tengo abierto", "analiza mi pantalla"])
+                if is_vision:
+                    self.hud_trigger_scan.emit("SYS_SCAN: ANALIZANDO PANTALLA")
                     
-                    # Importar y ejecutar el comando en segundo plano
-                    from skills_handler import execute_command
-                    threading.Thread(target=execute_command, args=(command_part,), daemon=True).start()
-            
-            # 3. Hablar (usando el texto limpio de comandos)
-            self.state_changed.emit("SPEAKING")
-            if self.hud:
-                self.hud.show_subtitle(speak_text)
-            self.voice.speak(speak_text)
-            if self.hud:
-                self.hud.clear_subtitle()
+                # 2. Pensar
+                self.state_changed.emit("THINKING")
+                response_text = self.brain.ask(user_text)
+                
+                # Separar el comando del texto hablado
+                speak_text = response_text
+                
+                if response_text.strip().startswith("[COMMAND:"):
+                    # Buscar dónde termina el comando
+                    end_idx = response_text.find("]")
+                    if end_idx != -1:
+                        command_part = response_text[:end_idx + 1]
+                        speak_text = response_text[end_idx + 1:].strip()
+                        
+                        # Ejecutar el comando en segundo plano
+                        from skills_handler import execute_command
+                        threading.Thread(target=execute_command, args=(command_part,), daemon=True).start()
+                
+                # 3. Hablar (usando subtítulos y voz de forma thread-safe)
+                self.state_changed.emit("SPEAKING")
+                self.hud_show_subtitle.emit(speak_text)
+                self.voice.speak(speak_text)
+                self.hud_clear_subtitle.emit()
+                
+                # Bucle de conversación continua: Escuchar el follow-up sin palabra clave
+                # Si el usuario hace silencio por 6 segundos, el bucle se detiene
+                self.state_changed.emit("LISTENING")
+                user_text = self.voice.listen(timeout=6, phrase_time_limit=10)
+                
         except Exception as e:
             print(f"Error en el ciclo de interacción: {e}")
         finally:
-            # Aseguramos que pase lo que pase, el estado vuelva a IDLE y se libere para la siguiente pregunta
+            # Volver a reposo y liberar el asistente
             self.state_changed.emit("IDLE")
             self.is_busy = False
 
@@ -175,6 +181,11 @@ def main():
     widget.request_listen.connect(controller.start_interaction)
     widget.request_settings.connect(settings_panel.show)
     controller.state_changed.connect(widget.set_state)
+    
+    # Conectar señales de HUD de forma thread-safe
+    controller.hud_trigger_scan.connect(hud.trigger_analysis_hud)
+    controller.hud_show_subtitle.connect(hud.show_subtitle)
+    controller.hud_clear_subtitle.connect(hud.clear_subtitle)
     
     # Conectar señales del panel de control
     settings_panel.settings_changed.connect(lambda data: (

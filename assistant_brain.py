@@ -135,21 +135,52 @@ class AssistantBrain:
             print(f"Error consultando modelos de visión dinámicos: {e}")
         return ["nvidia/nemotron-nano-12b-v2-vl:free", "google/gemma-4-31b-it:free"]
 
+    def _ask_ollama_chat(self, model, messages):
+        chat_url = self.config["ollama_url"].replace("/api/generate", "/api/chat")
+        chat_data = {
+            "model": model,
+            "messages": messages,
+            "stream": False
+        }
+        response = requests.post(chat_url, json=chat_data, timeout=20)
+        response.raise_for_status()
+        result = response.json()
+        return result["message"]["content"]
+
     def _run_vision_agent(self, user_text):
         img_b64 = self._capture_screen_base64()
         if not img_b64:
             return "Lo siento señor, no he podido capturar la pantalla en este momento."
             
-        print("[JARVIS SISTEMA] Pantalla capturada. Analizando imagen...")
-        
-        headers = {
-            "Authorization": f"Bearer {self.config['openrouter_key']}",
-            "Content-Type": "application/json"
-        }
+        print("[JARVIS SISTEMA] Pantalla capturada. Analizando localmente...")
         
         obsidian_info = self._get_obsidian_context()
         now = datetime.datetime.now()
         timestamp_info = f"\n[Nota del sistema: Hora actual local: {now.strftime('%d/%m/%Y %H:%M:%S')}]"
+        
+        # 1. Intentar localmente con Moondream o Llava
+        local_model = "moondream"
+        try:
+            messages = [
+                {"role": "system", "content": self.history[0]["content"] + obsidian_info},
+                {
+                    "role": "user",
+                    "content": user_text + timestamp_info,
+                    "images": [img_b64]
+                }
+            ]
+            reply = self._ask_ollama_chat(local_model, messages)
+            self.history.append({"role": "user", "content": user_text + " [Analizando pantalla local]"})
+            self.history.append({"role": "assistant", "content": reply})
+            return reply
+        except Exception as e:
+            print(f"[JARVIS SISTEMA] Ollama local ({local_model}) falló: {e}. Usando plan B (OpenRouter)...")
+            
+        # 2. Plan B: Fallback a OpenRouter
+        headers = {
+            "Authorization": f"Bearer {self.config['openrouter_key']}",
+            "Content-Type": "application/json"
+        }
         
         messages = [
             {"role": "system", "content": self.history[0]["content"] + obsidian_info},
@@ -170,7 +201,7 @@ class AssistantBrain:
         free_vision_models = self._get_free_vision_models()
         
         for model in free_vision_models:
-            print(f"Intentando analizar pantalla con el modelo visual: {model}...")
+            print(f"Intentando analizar pantalla con el modelo visual en la nube: {model}...")
             data = {
                 "model": model,
                 "messages": messages
@@ -181,27 +212,40 @@ class AssistantBrain:
                 result = response.json()
                 if "choices" in result and len(result["choices"]) > 0:
                     reply = result["choices"][0]["message"]["content"]
-                    self.history.append({"role": "user", "content": user_text + " [Analizando pantalla]"})
+                    self.history.append({"role": "user", "content": user_text + " [Analizando pantalla en nube]"})
                     self.history.append({"role": "assistant", "content": reply})
                     return reply
             except Exception as e:
-                print(f"Error con modelo visual {model}: {e}")
+                print(f"Error con modelo visual de nube {model}: {e}")
                 
-        return "Lo siento señor, he tenido un problema analizando su pantalla a través de todos los modelos de la red."
+        return "Lo siento señor, he tenido un problema analizando su pantalla a través de todos los modelos locales y de la red."
 
     def _run_deep_thinking_agent(self, user_text):
-        # Usamos DeepSeek-R1 (modelo de razonamiento de largo pensamiento) si está libre, o Llama-3-70b
-        model = "deepseek/deepseek-r1:free"
+        obsidian_info = self._get_obsidian_context()
+        now = datetime.datetime.now()
+        timestamp_info = f"\n[Nota del sistema: La fecha/hora es {now.strftime('%d/%m/%Y %H:%M:%S')}. Estás en modo de Razonamiento Profundo.]"
+        
+        self.history.append({"role": "user", "content": user_text + timestamp_info + obsidian_info})
+        
+        # 1. Intentar localmente con el modelo configurado en Ollama
+        local_model = self.config.get("ollama_model", "llama3")
+        try:
+            print(f"Intentando razonamiento local con modelo: {local_model}...")
+            reply = self._ask_ollama_chat(local_model, self.history)
+            self.history.append({"role": "assistant", "content": reply})
+            return reply
+        except Exception as e:
+            print(f"[JARVIS SISTEMA] Razonamiento local ({local_model}) falló: {e}. Usando plan B (OpenRouter)...")
+            self.history.pop()  # Limpiar último input para el fallback
+            
+        # 2. Plan B: Fallback a OpenRouter
         headers = {
             "Authorization": f"Bearer {self.config['openrouter_key']}",
             "Content-Type": "application/json"
         }
         
-        obsidian_info = self._get_obsidian_context()
-        now = datetime.datetime.now()
-        timestamp_info = f"\n[Nota del sistema: La fecha/hora es {now.strftime('%d/%m/%Y %H:%M:%S')}. Estás en modo de Razonamiento Profundo. Tómate tu tiempo para responder de manera óptima pero precisa.]"
-        
         self.history.append({"role": "user", "content": user_text + timestamp_info + obsidian_info})
+        model = "deepseek/deepseek-r1:free"
         
         data = {
             "model": model,
@@ -223,27 +267,38 @@ class AssistantBrain:
                 self.history.append({"role": "assistant", "content": clean_reply})
                 return clean_reply
         except Exception as e:
-            print(f"Error con DeepSeek R1: {e}. Probando fallback casual...")
+            print(f"Error con DeepSeek R1 en nube: {e}. Probando fallback de chat rápido...")
             self.history.pop()  # Limpiar último input
             
         return self._run_default_agent(user_text, is_builder=False)
 
     def _run_default_agent(self, user_text, is_builder=False):
-        headers = {
-            "Authorization": f"Bearer {self.config['openrouter_key']}",
-            "Content-Type": "application/json"
-        }
-        
         obsidian_info = self._get_obsidian_context()
         now = datetime.datetime.now()
         timestamp_info = f"\n[Nota del sistema: La fecha y hora actual local es {now.strftime('%d/%m/%Y %H:%M:%S')}]"
         
         self.history.append({"role": "user", "content": user_text + timestamp_info + obsidian_info})
         
-        # En caso de constructor de comandos, priorizamos Gemini 2.5 Flash por velocidad y precisión de formato
+        # 1. Intentar localmente por defecto
+        local_model = self.config.get("ollama_model", "llama3")
+        try:
+            print(f"Generando respuesta local con modelo: {local_model}...")
+            reply = self._ask_ollama_chat(local_model, self.history)
+            self.history.append({"role": "assistant", "content": reply})
+            return reply
+        except Exception as e:
+            print(f"[JARVIS SISTEMA] Chat local ({local_model}) falló: {e}. Usando plan B (OpenRouter)...")
+            self.history.pop()  # Limpiar último input para el fallback
+            
+        # 2. Plan B: Fallback a OpenRouter
+        headers = {
+            "Authorization": f"Bearer {self.config['openrouter_key']}",
+            "Content-Type": "application/json"
+        }
+        
+        self.history.append({"role": "user", "content": user_text + timestamp_info + obsidian_info})
         model = self.config.get("openrouter_model", "google/gemini-2.5-flash:free")
         
-        # Intentar llamada
         data = {
             "model": model,
             "messages": self.history
@@ -258,30 +313,7 @@ class AssistantBrain:
                 self.history.append({"role": "assistant", "content": reply})
                 return reply
         except Exception as e:
-            print(f"Error en agente por defecto: {e}. Conectando a Ollama Local...")
-            self.history.pop()  # Limpiar último input para no duplicar en Ollama
+            print(f"Error en agente de nube: {e}.")
+            self.history.pop()  # Limpiar último input
             
-        return self._ask_ollama(user_text)
-
-    def _ask_ollama(self, user_text):
-        import datetime
-        now = datetime.datetime.now()
-        timestamp_info = f"\n[Nota del sistema: La fecha y hora actual local es {now.strftime('%d/%m/%Y %H:%M:%S')}]"
-        self.history.append({"role": "user", "content": user_text + timestamp_info})
-        
-        chat_url = self.config["ollama_url"].replace("/api/generate", "/api/chat")
-        chat_data = {
-            "model": self.config["ollama_model"],
-            "messages": self.history,
-            "stream": False
-        }
-        try:
-            response = requests.post(chat_url, json=chat_data)
-            response.raise_for_status()
-            result = response.json()
-            reply = result["message"]["content"]
-            self.history.append({"role": "assistant", "content": reply})
-            return reply
-        except Exception as e:
-            print(f"Error con Ollama: {e}")
-            return "Lo siento señor, no he podido establecer comunicación con la red ni con la IA local."
+        return "Lo siento Señor, no he podido procesar su solicitud de forma local ni a través de la red."

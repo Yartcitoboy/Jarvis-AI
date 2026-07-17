@@ -1,4 +1,5 @@
 import os
+import sys
 import webbrowser
 import subprocess
 import pyautogui
@@ -150,8 +151,6 @@ def execute_command(command_str):
         elif cmd_type == "quit":
             print("[JARVIS SISTEMA] Apagando el sistema por orden del usuario.")
             # Forzamos el cierre de la aplicación
-            import sys
-            import os
             os._exit(0)
             return "Apagando..."
                 
