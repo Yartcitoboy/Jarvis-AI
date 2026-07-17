@@ -120,36 +120,9 @@ class JarvisHUDOverlay(QWidget):
         painter.drawLine(self.width() - offset, self.height() - offset, self.width() - offset - length, self.height() - offset)
         painter.drawLine(self.width() - offset, self.height() - offset, self.width() - offset, self.height() - offset - length)
         
-        # 2. Caja de Objetivo Central (Target Box) si está activa
-        if self.target_rect and self.target_text:
-            # Dibujar caja de objetivo punteada
-            pen.setStyle(Qt.DashLine)
-            painter.setPen(pen)
-            painter.drawRect(self.target_rect)
-            
-            # Líneas de cruz central
-            cx = self.target_rect.x() + self.target_rect.width() // 2
-            cy = self.target_rect.y() + self.target_rect.height() // 2
-            pen.setStyle(Qt.SolidLine)
-            painter.setPen(pen)
-            painter.drawLine(cx - 20, cy, cx + 20, cy)
-            painter.drawLine(cx, cy - 20, cx, cy + 20)
-            
-            # Texto del objetivo
-            painter.setFont(QFont("Consolas", 14, QFont.Bold))
-            painter.drawText(
-                self.target_rect.x() + 10, 
-                self.target_rect.y() - 10, 
-                f">> {self.target_text}"
-            )
-            
-            # Dibujar un pequeño gráfico decorativo en las esquinas de la caja
-            r = self.target_rect
-            painter.drawArc(r.x() - 10, r.y() - 10, 20, 20, 90 * 16, 90 * 16)
-            painter.drawArc(r.right() - 10, r.y() - 10, 20, 20, 0 * 16, 90 * 16)
-            painter.drawArc(r.x() - 10, r.bottom() - 10, 20, 20, 180 * 16, 90 * 16)
-            painter.drawArc(r.right() - 10, r.bottom() - 10, 20, 20, 270 * 16, 90 * 16)
-            
+        # 2. Caja de Objetivo Central (Target Box) - Eliminada a petición del usuario para mantener limpia la pantalla
+        pass
+        
         # 3. Datos del sistema de fondo en la esquina superior derecha
         painter.setFont(QFont("Consolas", 9))
         painter.drawText(self.width() - 250, 60, "SYS_STATUS: ACTIVE")
