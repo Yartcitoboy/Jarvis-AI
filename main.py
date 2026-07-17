@@ -6,6 +6,8 @@ from PyQt5.QtCore import pyqtSignal, QObject
 from gui_widget import JarvisWidget
 from voice_handler import VoiceHandler
 from assistant_brain import AssistantBrain
+from settings_ui import JarvisSettingsPanel
+from overlay_ui import JarvisHUDOverlay
 
 class AssistantController(QObject):
     state_changed = pyqtSignal(str)
@@ -15,6 +17,7 @@ class AssistantController(QObject):
         self.voice = VoiceHandler()
         self.brain = AssistantBrain()
         self.is_busy = False
+        self.hud = None  # Se asigna en main()
         import time
         self.last_active_time = time.time()
         self.is_sleeping = False
@@ -89,7 +92,11 @@ class AssistantController(QObject):
                     threading.Thread(target=execute_command, args=(command_part,), daemon=True).start()
             
             self.state_changed.emit("SPEAKING")
+            if self.hud:
+                self.hud.show_subtitle(speak_text)
             self.voice.speak(speak_text)
+            if self.hud:
+                self.hud.clear_subtitle()
             import time
             self.last_active_time = time.time()
         except Exception as e:
@@ -114,6 +121,12 @@ class AssistantController(QObject):
             if not inline_payload:
                 print(f"Tú: {user_text}")
                 
+            # Disparar HUD visual si se detecta escaneo de pantalla
+            user_lower = user_text.lower()
+            is_vision = any(w in user_lower for w in ["pantalla", "mira esto", "mira mi pantalla", "qué tengo abierto", "analiza mi pantalla"])
+            if is_vision and self.hud:
+                self.hud.trigger_analysis_hud("SYS_SCAN: ANALIZANDO PANTALLA")
+                
             # 2. Pensar
             self.state_changed.emit("THINKING")
             response_text = self.brain.ask(user_text)
@@ -135,7 +148,11 @@ class AssistantController(QObject):
             
             # 3. Hablar (usando el texto limpio de comandos)
             self.state_changed.emit("SPEAKING")
+            if self.hud:
+                self.hud.show_subtitle(speak_text)
             self.voice.speak(speak_text)
+            if self.hud:
+                self.hud.clear_subtitle()
         except Exception as e:
             print(f"Error en el ciclo de interacción: {e}")
         finally:
@@ -148,24 +165,42 @@ def main():
     
     controller = AssistantController()
     widget = JarvisWidget()
+    hud = JarvisHUDOverlay()
+    settings_panel = JarvisSettingsPanel()
     
-    # Conectar la interfaz gráfica con el controlador de cerebro/voz
+    # Asignar HUD al controlador para subtítulos y objetivos
+    controller.hud = hud
+    
+    # Conectar señales del widget principal
     widget.request_listen.connect(controller.start_interaction)
+    widget.request_settings.connect(settings_panel.show)
     controller.state_changed.connect(widget.set_state)
     
-    # Saludo de arranque dinámico
+    # Conectar señales del panel de control
+    settings_panel.settings_changed.connect(lambda data: (
+        widget.set_theme_color(data["color"]),
+        hud.set_theme_color(data["color"])
+    ))
+    settings_panel.widget_toggle.connect(lambda visible: (
+        widget.show() if visible else widget.hide()
+    ))
+    
+    # Mostrar el HUD de fondo interactivo
+    hud.show()
+    widget.show()
+    
+    # Saludo de arranque dinámico en segundo plano
     threading.Thread(target=controller.voice.play_startup_sound, daemon=True).start()
     
     # Iniciar la escucha de la palabra clave "Jarvis" y bucle de proactividad
     threading.Thread(target=controller.wake_word_loop, daemon=True).start()
     threading.Thread(target=controller.proactive_loop, daemon=True).start()
     
-    widget.show()
-    
     print("="*40)
     print("J.A.R.V.I.S INICIADO CON ÉXITO")
     print("Instrucciones:")
     print(" - Arrastra el núcleo con clic IZQUIERDO para moverlo.")
+    print(" - Haz DOBLE CLIC IZQUIERDO en el núcleo para abrir el panel de control.")
     print(" - Di 'Jarvis' o haz clic DERECHO sobre el núcleo para hablarle.")
     print("="*40)
     
