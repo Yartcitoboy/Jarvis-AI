@@ -1,0 +1,7 @@
+PyQt5
+SpeechRecognition
+edge-tts
+pygame
+requests
+PyAudio
+pyautogui

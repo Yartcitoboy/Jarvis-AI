@@ -1,0 +1,9 @@
+{
+    "api": {
+        "engine": "openrouter",
+        "openrouter_key": "PON_TU_API_KEY_AQUI",
+        "openrouter_model": "google/gemma-4-31b-it:free",
+        "ollama_url": "http://localhost:11434/api/generate",
+        "ollama_model": "llama3"
+    }
+}

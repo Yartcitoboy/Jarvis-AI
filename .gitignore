@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+notas_jarvis.txt
+config.json
+temp_response.mp3
+.venv/
+env/
